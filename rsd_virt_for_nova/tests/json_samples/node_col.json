@@ -1,0 +1,13 @@
+{
+    "@odata.context": "/redfish/v1/$metadata#ComposedNodeCollection.ComposedNodeCollection",
+    "@odata.id": "/redfish/v1/Nodes",
+    "@odata.type": "#ComposedNodeCollection.ComposedNodeCollection",
+    "Actions": {
+        "#ComposedNodeCollection.Allocate": {
+            "target": "/redfish/v1/Nodes/Actions/Allocate"
+        }
+    },
+    "Members": [],
+    "Members@odata.count": 0,
+    "Name": "Composed Node Collection"
+}

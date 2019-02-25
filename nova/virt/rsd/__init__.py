@@ -1,0 +1,1 @@
+"""Initialize new virt driver."""

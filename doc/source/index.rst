@@ -11,12 +11,24 @@
       License for the specific language governing permissions and limitations
       under the License.
 
-######
-README
-######
+Welcome to nova_rsd's documentation!
+====================================
 
-rsd-virt-for-nova
------------------
+Contents:
 
-A nova virt driver to communicate with IntelRSD's PODM and PSME to create
-composed nodes.
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents
+
+* :ref:`examples/sample_local.conf`
+* :ref:`installation_guide.rst`
+* :ref:`known_issues.rst`
+* :ref:`user_guide.rsd`
+
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

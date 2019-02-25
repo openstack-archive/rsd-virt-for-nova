@@ -1,0 +1,123 @@
+{
+    "@odata.context": "/redfish/v1/$metadata#ComputerSystem.ComputerSystem", "@odata.id": "/redfish/v1/Systems/System1",
+    "@odata.type": "#ComputerSystem.v1_3_0.ComputerSystem",
+    "Id": "System1",
+    "Name": "My Computer System",
+    "Description": "Description of server",
+    "SystemType": "Physical",
+    "AssetTag": "free form asset tag",
+    "Manufacturer": "Manufacturer Name",
+    "Model": "Model Name",
+    "SKU": "SKU",
+    "SerialNumber": "2M220100SL",
+    "PartNumber": "Computer1",
+    "UUID": "00000000-0000-0000-0000-000000000000",
+    "HostName": null,
+    "Status": {
+        "State": "Enabled",
+        "Health": "OK",
+        "HealthRollup": "OK"
+    },
+    "IndicatorLED": null,
+    "PowerState": "On",
+    "Boot": {
+        "@odata.type": "#ComputerSystem.v1_1_0.Boot",
+        "BootSourceOverrideEnabled": "Disabled",
+        "BootSourceOverrideTarget": "None",
+        "BootSourceOverrideTarget@Redfish.AllowableValues": ["None"],
+        "BootSourceOverrideMode": null,
+        "BootSourceOverrideMode@Redfish.AllowableValues":  []
+    },
+    "BiosVersion": null,
+    "ProcessorSummary": {
+        "Count": 1,
+        "Model": null,
+        "Status": {
+            "State": null,
+            "Health": null,
+            "HealthRollup": null
+        }
+    },
+    "MemorySummary": {
+        "TotalSystemMemoryGiB": 32,
+        "Status": {
+            "State": null,
+            "Health": null,
+            "HealthRollup": null
+        }
+    },
+    "Processors": {
+        "@odata.id": "/redfish/v1/Systems/System1/Processors"
+    },
+    "EthernetInterfaces": {
+        "@odata.id": "/redfish/v1/Systems/System1/EthernetInterfaces"
+    },
+    "SimpleStorage": {},
+    "Storage": {
+        "@odata.id": "/redfish/v1/Systems/System1/Storage"
+    },
+    "Memory": {
+        "@odata.id": "/redfish/v1/Systems/System1/Memory"
+    },
+    "PCIeDevices": [
+        {
+            "@odata.id": "/redfish/v1/Chassis/PCIeSwitch1/PCIeDevices/Device1"
+        }
+    ],
+    "PCIeFunctions": [],
+    "TrustedModules": [],
+    "Links": {
+        "@odata.type": "#ComputerSystem.v1_2_0.Links",
+        "Chassis": [{
+            "@odata.id": "/redfish/v1/Chassis/4"
+        }],
+        "ManagedBy": [{
+            "@odata.id": "/redfish/v1/Managers/1"
+        }],
+        "Endpoints": [],
+        "Oem": {}
+    },
+    "Actions": {
+        "#ComputerSystem.Reset": {
+            "target": "/redfish/v1/Systems/System1/Actions/ComputerSystem.Reset",
+            "ResetType@Redfish.AllowableValues": ["On",
+                "ForceOff",
+                "GracefulShutdown",
+                "ForceRestart",
+                "Nmi",
+                "GracefulRestart",
+                "ForceOn",
+                "PushPowerButton"]
+        },
+        "Oem": {
+            "#Intel.Oem.StartDeepDiscovery": {
+                "target": "/redfish/v1/Systems/System1/Actions/Oem/Intel.Oem.StartDeepDiscovery"
+            },
+            "#Intel.Oem.StartDiscoveryOnDemand": {
+                "target": "/redfish/v1/Systems/System1/Actions/Oem/Intel.Oem.StartDiscoveryOnDemand"
+            },
+            "#Intel.Oem.ChangeTPMState": {
+                "target": "/redfish/v1/Systems/System1/Actions/Oem/Intel.Oem.ChangeTPMState",
+                "InterfaceType@Redfish.AllowableValues": [
+                    "TPM1_2",
+                    "TPM2_0"
+                ]
+            }
+        }
+    },
+    "Oem": {
+        "Intel_RackScale": {
+            "@odata.type": "#Intel.Oem.ComputerSystem",
+            "PciDevices": [],
+            "DiscoveryState": "Basic",
+            "ProcessorSockets": 1,
+            "MemorySockets": 2,
+            "PCIeConnectionId": [],
+            "UserModeEnabled": false,
+            "TrustedExecutionTechnologyEnabled": false,
+            "Metrics": {
+               "@odata.id": "/redfish/v1/Systems/System1/Metrics"
+            }
+        }
+    }
+}

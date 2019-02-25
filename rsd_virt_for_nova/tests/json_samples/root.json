@@ -1,0 +1,44 @@
+{
+    "@odata.context": "/redfish/v1/$metadata#ServiceRoot.ServiceRoot",
+    "@odata.id": "/redfish/v1/",
+    "@odata.type": "#ServiceRoot.v1_1_1.ServiceRoot",
+    "Id": "RootService",
+    "Name": "Root Service",
+    "Description": "description-as-string",
+    "RedfishVersion": "1.1.0",
+    "UUID": "92384634-2938-2342-8820-489239905423",
+    "Systems": {
+        "@odata.id": "/redfish/v1/Systems"
+    },
+    "Chassis": {
+        "@odata.id": "/redfish/v1/Chassis"
+    },
+    "Managers": {
+        "@odata.id": "/redfish/v1/Managers"
+    },
+    "EventService": {
+        "@odata.id": "/redfish/v1/EventService"
+    },
+    "Fabrics": {
+      "@odata.id": "/redfish/v1/Fabrics"
+    },
+    "EthernetSwitches": {
+        "@odata.id": "/redfish/v1/EthernetSwitches"
+    },
+    "StorageServices": {
+      "@odata.id": "/redfish/v1/StorageServices"
+    },
+    "Oem": {
+        "Intel_RackScale": {
+            "@odata.type": "#Intel.Oem.ServiceRoot",
+            "ApiVersion": "2.3.0",
+            "Nodes": {
+                "@odata.id": "/redfish/v1/Nodes"
+            },
+            "EthernetSwitches": {
+                "@odata.id": "/redfish/v1/EthernetSwitches"
+            }
+        }
+    },
+    "Links": {}
+}

@@ -32,10 +32,10 @@ instructions provided in `installation_guide.rst`.
 Usage Instructions
 ------------------
 
-The new nova-rsd virt driver aims to use the same CLI commands as any of the
+The new rsd-virt-for-nova virt driver aims to use the same CLI commands as any of the
 other standard virt drivers.
 
-Currently the following commands are supported by the new nova-rsd virt driver:
+Currently the following commands are supported by the new virt driver:
 
   ::
 

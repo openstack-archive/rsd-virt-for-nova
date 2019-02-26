@@ -12,7 +12,7 @@
 # implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Setup file for the nova_rsd virt driver."""
+"""Setup file for the rsd-virt-for-nova virt driver."""
 import setuptools
 
 # In python < 2.7.4, a lazy loading of package `pbr` will break

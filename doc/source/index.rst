@@ -11,7 +11,7 @@
       License for the specific language governing permissions and limitations
       under the License.
 
-Welcome to nova_rsd's documentation!
+Welcome to rsd-virt-for-nova's documentation!
 ====================================
 
 Contents:

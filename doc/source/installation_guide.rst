@@ -32,16 +32,16 @@ using the deployment tool DevStack:
     https://docs.openstack.org/devstack/latest/guides/single-machine.html
 
 Once you have set up your environment to deploy DevStack please refer to the
-below configuration instructions to enable the nova-rsd driver contained in
-this repo.
+below configuration instructions to enable the rsd-virt-for-nova driver
+contained in this repo.
 
 DevStack Configuration
 ~~~~~~~~~~~~~~~~~~~~~~
 
 These configuration instructions provide directions for this minimal
-installation of the nova-rsd driver with OpenStack. It also assumes that you
-already have setup and configured an RSD PODM that is communicating with
-available composable compute systems, via one or more PSMEs.
+installation of the rsd-virt-for-nova driver with OpenStack. It also assumes
+that you already have setup and configured an RSD PODM that is communicating
+with available composable compute systems, via one or more PSMEs.
 
   .. Note::
 
@@ -71,8 +71,8 @@ In the local.conf the following parameters can be changed:
     will be running.
 
 * ``enable_plugin nova-rsd <PATH_TO_NOVA_RSD_REPO> <REPO_BRANCH_NAME>``:
-    Clone the nova-rsd repository and point PATH_TO_NOVA_RSD_REPO to its
-    location.
+    Clone the rsd-virt-for-nova repository and point PATH_TO_NOVA_RSD_REPO to
+    its location.
 
     Set the REPO_BRANCH_NAME to be the branch of the above repo to be the one
     with the code version that you require. If left unspecified will default to

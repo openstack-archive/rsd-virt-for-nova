@@ -45,7 +45,7 @@ ERROR_ON_CLONE=False
             case $2 in
                 "pre-install")
                     # cloning source code
-                    echo_summary "Cloning of src files for nova-rsd not required"
+                    echo_summary "Cloning of src files for rsd-virt-for-nova not required"
      #               sudo pip install -e "git+https://github.com/openstack/rsd-lib@517275b24fc86ce67a345b3aae2d4fa8564d18c1#egg=rsd_lib"
                 ;;
                 "install")

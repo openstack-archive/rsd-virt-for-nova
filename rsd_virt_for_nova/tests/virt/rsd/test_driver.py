@@ -116,14 +116,16 @@ class TestRSDDriver(base.BaseTestCase):
         self.rsd = rsd_lib.main.RSDLib('http://foo.bar:8442', username='foo',
                                        password='bar', verify=False).factory()
 
-        with open('rsd_virt_for_nova/tests/json_samples/chassis_col.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/chassis_col.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
         self.chassis_col = chassis.ChassisCollection(
             self.root_conn, '/redfish/v1/Chassis',
             redfish_version='1.0.2')
 
-        with open('rsd_virt_for_nova/tests/json_samples/chassis.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/chassis.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
 
@@ -131,7 +133,8 @@ class TestRSDDriver(base.BaseTestCase):
             self.root_conn, '/redfish/v1/Chassis/Chassis1',
             redfish_version='1.0.2')
 
-        with open('rsd_virt_for_nova/tests/json_samples/node_col.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/node_col.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
         self.node_collection = node.NodeCollection(
@@ -144,21 +147,24 @@ class TestRSDDriver(base.BaseTestCase):
             self.root_conn, '/redfish/v1/Nodes/Node1',
             redfish_version='1.0.2')
 
-        with open('rsd_virt_for_nova/tests/json_samples/node_assembled.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/node_assembled.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
         self.node_ass_inst = node.Node(
             self.root_conn, '/redfish/v1/Nodes/Node1',
             redfish_version='1.0.2')
 
-        with open('rsd_virt_for_nova/tests/json_samples/sys_collection.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/sys_collection.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = \
                 json.loads(f.read())
         self.system_col = system.SystemCollection(
             self.root_conn, '/redfish/v1/Systems',
             redfish_version='1.0.2')
 
-        with open('rsd_virt_for_nova/tests/json_samples/system.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/system.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
         self.system_inst = system.System(
@@ -338,6 +344,7 @@ class TestRSDDriver(base.BaseTestCase):
         # Mock out instances and composed nodes for testing purposes
         node_collection = self.RSD.driver.PODM.get_node_collection
         node_inst = node_collection.return_value.compose_node.return_value
+        rep_node = self.RSD.driver.PODM.get_node.return_value
         self.RSD._composed_nodes = {self.inst1.uuid: mock_node}
 
         # Try to destroy the instance
@@ -347,7 +354,8 @@ class TestRSDDriver(base.BaseTestCase):
         mock_node.delete_node.assert_called_once()
         node_collection.assert_called_once()
         node_collection.return_value.compose_node.assert_called_once()
-        node_inst.assemble_node.assert_called_once()
+        self.RSD.driver.PODM.get_node.assert_called_once_with(node_inst)
+        rep_node.assemble_node.assert_called_once()
         self.assertNotIn(self.inst1.uuid, self.RSD.instances)
 
     @mock.patch.object(v2_3_node, 'Node', autospec=True)

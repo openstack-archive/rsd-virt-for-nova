@@ -5,7 +5,7 @@
 
 ZUUL_CLONER=/usr/zuul-env/bin/zuul-cloner
 BRANCH_NAME=master
-LIB_NAMES=(nova-rsd nova)
+LIB_NAMES=(rsd-virt-for-nova nova)
 requirements_installed=$(echo "import openstack_requirements" | python 2>/dev/null ; echo $?)
 
 set -e
@@ -14,7 +14,7 @@ CONSTRAINTS_FILE=$1
 shift
 
 install_cmd="pip install"
-mydir=$(mktemp -dt "nova-rsd-tox_install-XXXXXXX")
+mydir=$(mktemp -dt "rsd-virt-for-nova-tox_install-XXXXXXX")
 trap "rm -rf $mydir" EXIT
 localfile=$mydir/upper-constraints.txt
 if [[ $CONSTRAINTS_FILE != http* ]]; then

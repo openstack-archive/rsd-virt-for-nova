@@ -151,7 +151,7 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'rsd_virt_for_nova', u'rsd_virt_for_nova Documentation'
+    (master_doc, 'rsd_virt_for_nova', u'rsd_virt_for_nova Documentation',
      author, 'rsd_virt_for_nova', 'One line description of project.',
      'Miscellaneous'),
 ]

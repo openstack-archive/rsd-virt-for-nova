@@ -169,7 +169,8 @@ class RSDDriver(driver.ComputeDriver):
             COMPOSED_NODE_COL = self.driver.PODM.get_node_collection()
             try:
                 node_inst = COMPOSED_NODE_COL.compose_node()
-                node_inst.assemble_node()
+                rep_node = self.driver.PODM.get_node(node_inst)
+                rep_node.assemble_node()
             except Exception as ex:
                 LOG.warn("Node is already allocated: %s", ex)
         else:

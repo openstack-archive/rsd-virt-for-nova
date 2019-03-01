@@ -29,6 +29,8 @@ from nova import context
 
 from nova import exception
 
+from nova import objects
+
 from nova import rc_fields as fields
 
 from nova.compute import power_state
@@ -202,8 +204,8 @@ class RSDDriver(driver.ComputeDriver):
             'vcpus': self.get_sys_proc_info(cha_sys),
             'memory_mb': self.get_sys_memory_info(cha_sys),
             'local_gb': 0,
-            'vcpus_used': self.get_sys_proc_info(cha_sys),
-            'memory_mb_used': self.get_sys_memory_info(cha_sys),
+            'vcpus_used': 0,
+            'memory_mb_used': 0,
             'local_gb_used': 0,
             'hypervisor_type': 'composable',
             'hypervisor_version': versionutils.convert_version_to_int('1.0'),
@@ -245,8 +247,7 @@ class RSDDriver(driver.ComputeDriver):
             cha_sys = self.check_chassis_systems(chas)
             if cha_sys != []:
                 for s in cha_sys:
-                    system = SYSTEM_COL.get_member(s)
-                    sys_inv = self.create_child_inventory(system.identity)
+                    sys_inv = self.create_child_inventory(s)
                     try:
                         provider_tree.new_child(s, nodename)
                     except Exception as ex:
@@ -375,7 +376,12 @@ class RSDDriver(driver.ComputeDriver):
 
     def create_child_inventory(self, system):
         """Create custom resources for all of the child RP's."""
-        res = fields.ResourceClass.normalize_name(system)
+        SYSTEM_COL = self.driver.PODM.get_system_collection()
+        sys = SYSTEM_COL.get_member(system)
+        mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
+        proc = sys.processors.summary.count
+        flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
+        res = fields.ResourceClass.normalize_name(flav_id)
         return {
              res: {
                 'total': 1,
@@ -403,7 +409,7 @@ class RSDDriver(driver.ComputeDriver):
             mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
             proc = sys.processors.summary.count
             flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
-            res = fields.ResourceClass.normalize_name(sys.identity)
+            res = fields.ResourceClass.normalize_name(flav_id)
             spec = 'resources:' + res
             values = {
                 'name': 'RSD-' + flav_id,
@@ -441,10 +447,26 @@ class RSDDriver(driver.ComputeDriver):
     def check_flavors(self, collection, systems):
         """Check if flavors should be deleted based on system removal."""
         sys_ids = []
+        flav_ids = []
         LOG.debug("Checking existing flavors.")
         for s in systems:
             sys = collection.get_member(s)
             sys_ids.append(sys.identity)
+            mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
+            proc = sys.processors.summary.count
+            flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
+            flav_ids.append(flav_id)
+
+        f_list = objects.FlavorList.get_all(context.get_admin_context())
+        for f in f_list:
+            if 'RSD' in f.name:
+                if f.flavorid not in flav_ids:
+                    try:
+                        flavor._flavor_destroy(
+                                context.get_admin_context(),
+                                flavor_id=f.flavorid)
+                    except exception.FlavorNotFound as ex:
+                        LOG.warn("Flavor not found exception: %s", ex)
 
         for k in list(self.rsd_flavors):
             sys_list = self.rsd_flavors[k]['rsd_systems']

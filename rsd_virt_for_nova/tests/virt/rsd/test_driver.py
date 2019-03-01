@@ -140,7 +140,8 @@ class TestRSDDriver(base.BaseTestCase):
         self.node_collection = node.NodeCollection(
             self.root_conn, '/redfish/v1/Nodes', redfish_version='1.0.2')
 
-        with open('rsd_virt_for_nova/tests/json_samples/node.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/node.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
         self.node_inst = node.Node(
@@ -411,12 +412,12 @@ class TestRSDDriver(base.BaseTestCase):
                           'local_gb': 0,
                           'local_gb_used': 0,
                           'memory_mb': mem_info.return_value,
-                          'memory_mb_used': mem_info.return_value,
+                          'memory_mb_used': 0,
                           'numa_topology': None,
                           'supported_instances':
                           [('x86_64', 'baremetal', 'hvm')],
                           'vcpus': proc_info.return_value,
-                          'vcpus_used': proc_info.return_value}, resources)
+                          'vcpus_used': 0}, resources)
 
     @mock.patch.object(driver.RSDDriver, '_create_flavors')
     @mock.patch.object(driver.RSDDriver, 'check_flavors')
@@ -455,8 +456,6 @@ class TestRSDDriver(base.BaseTestCase):
         self.ptree.new_root('/redfish/v1/Chassis/Chassis1', uuids.cn)
 
         # Setup other mocked calls for a successful test
-        sys_col = self.RSD.driver.PODM.get_system_collection.return_value
-        sys_col.get_member.return_value = self.system_inst
         chas_col = self.RSD.driver.PODM.get_chassis_collection.return_value
         chas_col.members_identities = ['/redfish/v1/Chassis/Chassis1']
         chas_col.get_member.return_value = self.chassis_inst
@@ -470,8 +469,7 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.driver.PODM.get_chassis_collection.assert_called()
         chas_col.get_member.assert_called_with('/redfish/v1/Chassis/Chassis1')
         check_chas.assert_called_with(self.chassis_inst)
-        sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
-        create_child_inv.assert_called_once_with(self.system_inst.identity)
+        create_child_inv.assert_called_once_with('/redfish/v1/Systems/System1')
         create_inv.assert_called_once_with(check_chas.return_value)
 
     @mock.patch.object(driver.RSDDriver, 'create_child_inventory')
@@ -677,16 +675,27 @@ class TestRSDDriver(base.BaseTestCase):
                                   'allocation_ratio': 1}
                                })
 
+    @mock.patch.object(driver.RSDDriver, 'conv_GiB_to_MiB')
     @mock.patch.object(fields.ResourceClass, 'normalize_name')
-    def test_create_child_inventory(self, norm_name):
+    def test_create_child_inventory(self, norm_name, conv_mem):
         """Test creating inventory for the child RP's."""
         # Set up a test to create the inventory for child resource providers
+        sys_col = self.RSD.driver.PODM.get_system_collection.return_value
+        sys_col.get_member.return_value = self.system_inst
+        mem = conv_mem.return_value - 512
+        proc = self.system_inst.processors.summary.count
+        flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         child_inv = self.RSD.create_child_inventory(
-                [self.system_inst.identity])
+                '/redfish/v1/Systems/System1')
 
         # Check that the correct functions are called and the inventory
         # is generated correctly
-        norm_name.assert_called_once_with([self.system_inst.identity])
+        self.RSD.driver.PODM.get_system_collection.assert_called_once()
+        sys_col.get_member.assert_called_once_with(
+                '/redfish/v1/Systems/System1')
+        conv_mem.assert_called_once_with(
+                self.system_inst.memory_summary.size_gib)
+        norm_name.assert_called_once_with(flav_id)
         self.assertEqual(child_inv, {norm_name.return_value: {
                                           'total': 1,
                                           'reserved': 0,
@@ -728,6 +737,10 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         sys_col.members_identities = ['/redfish/v1/Systems/System1']
         sys_col.get_member.return_value = self.system_inst
+        spec = 'resources:' + norm_name.return_value
+        mem = conv_mem.return_value - 512
+        proc = self.system_inst.processors.summary.count
+        flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         # Run test
         self.RSD._create_flavors()
 
@@ -735,14 +748,10 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
         conv_mem.assert_called_with(self.system_inst.memory_summary.size_gib)
-        norm_name.assert_called_with(self.system_inst.identity)
+        norm_name.assert_called_with(flav_id)
         admin_context.assert_called()
 
         # Flavor creation call check
-        spec = 'resources:' + norm_name.return_value
-        mem = conv_mem.return_value - 512
-        proc = self.system_inst.processors.summary.count
-        flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         flav_create.assert_called_once_with(
                 admin_context.return_value,
                 {'name': 'RSD-' + flav_id,
@@ -781,7 +790,7 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
         conv_mem.assert_called_with(self.system_inst.memory_summary.size_gib)
-        norm_name.assert_called_with(self.system_inst.identity)
+        norm_name.assert_called_with(flav_id)
         admin_context.assert_called()
 
         # Flavor creation call check
@@ -815,19 +824,25 @@ class TestRSDDriver(base.BaseTestCase):
         flav_create.assert_not_called()
         flav_from_db.assert_not_called()
 
+    @mock.patch.object(objects.FlavorList, 'get_all')
+    @mock.patch.object(context, 'get_admin_context')
     @mock.patch.object(flavor, '_flavor_destroy')
-    def test_check_flavors_failure(self, flav_destroy):
+    def test_check_flavors_failure(self, flav_destroy, get_context, flav_list):
         """Test for failing to check existing flavors."""
         # Setup for the test to fail to check flavors
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         self.RSD.check_flavors(self.system_col, [])
 
         # Confirm that checking the available flavors failed
+        get_context.assert_called()
+        flav_list.assert_called_with(get_context.return_value)
         sys_col.get_member.assert_not_called()
         flav_destroy.assert_not_called()
 
+    @mock.patch.object(objects.FlavorList, 'get_all')
+    @mock.patch.object(context, 'get_admin_context')
     @mock.patch.object(flavor, '_flavor_destroy')
-    def test_check_flavors_success(self, flav_destroy):
+    def test_check_flavors_success(self, flav_destroy, get_context, flav_list):
         """Test for successfully checking existing flavors."""
         # Setup for check flavor that exists
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
@@ -839,6 +854,8 @@ class TestRSDDriver(base.BaseTestCase):
 
         # Confirm the list of available flavors
         # No flavors need to be deleted
+        get_context.assert_called()
+        flav_list.assert_called_with(get_context.return_value)
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
         flav_destroy.assert_not_called()
 
@@ -857,6 +874,6 @@ class TestRSDDriver(base.BaseTestCase):
         # Confirm the list of availbable flavors
         # Delete all flavors that no longer have associated systems
         sys_col.get_member.assert_called_with(sys_str)
-        get_context.assert_called_once()
+        get_context.assert_called()
         flav_destroy.assert_called_with(get_context.return_value, 'flav_id')
         self.assertEqual(self.RSD.rsd_flavors, {})

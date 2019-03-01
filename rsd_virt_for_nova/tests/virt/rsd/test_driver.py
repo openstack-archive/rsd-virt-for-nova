@@ -60,13 +60,14 @@ CONF = cfg.CONF
 class FakeInstance(object):
     """A class to fake out nova instances."""
 
-    def __init__(self, name, state, uuid, new_flavor):
+    def __init__(self, name, state, uuid, new_flavor, node):
         """Initialize the variables for fake instances."""
         self.name = name
         self.power_state = state
         self.uuid = uuid
         self.display_description = None
         self.flavor = new_flavor
+        self.node = node
 
     def __getitem__(self, key):
         """Method to retrieve fake instance variables."""
@@ -110,7 +111,8 @@ class TestRSDDriver(base.BaseTestCase):
         mock_connector.return_value = self.root_conn
 
         # Create sample collections and instances of Chassis/System/Nodes
-        with open('rsd_virt_for_nova/tests/json_samples/root.json', 'r') as f:
+        with open('rsd_virt_for_nova/tests/json_samples/root.json',
+                  'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
         self.rsd = rsd_lib.main.RSDLib('http://foo.bar:8442', username='foo',
@@ -188,10 +190,11 @@ class TestRSDDriver(base.BaseTestCase):
             self.system_inst.identity,
             spec)
         self.inst1 = FakeInstance('inst1', power_state.RUNNING,
-                                  'inst1id', self.flavor)
+                                  'inst1id', self.flavor,
+                                  "/redfish/v1/Chassis/Chassis1")
         self.invalid_inst = FakeInstance(
                 'inv_inst', power_state.RUNNING, 'inv_inst_id',
-                self.flavor)
+                self.flavor, "/redfish/v1/Chassis/Chassis1")
         self.RSD.instances = {self.inst1.uuid: self.inst1}
 
         # A provider tree for testing on the placement API
@@ -324,9 +327,15 @@ class TestRSDDriver(base.BaseTestCase):
         node_col.members_identities = ['/redfish/v1/Nodes/Node1']
         self.RSD.driver.PODM.get_node.return_value = self.node_ass_inst
         mock_context = context.get_admin_context()
-        self.RSD.rsd_flavors = {self.flavor.flavorid: {
-                                   'id': 'flav_id',
-                                   'rsd_systems': [self.system_inst.identity]}}
+        self.RSD.rsd_flavors = {
+                self.flavor.flavorid: {
+                    'id': 'flav_id',
+                    'rsd_systems': {
+                        '/redfish/v1/Chassis/Chassis1':
+                                self.system_inst.identity
+                        }
+                    }
+                }
         image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
         # Run spawning test
         self.RSD.spawn(mock_context, self.inst1, image_meta,
@@ -725,18 +734,23 @@ class TestRSDDriver(base.BaseTestCase):
                                    '/redfish/v1/Systems/System3',
                                    '/redfish/v1/Systems/System4'])
 
+    @mock.patch.object(driver.RSDDriver, 'check_chassis_systems')
     @mock.patch.object(context, 'get_admin_context')
     @mock.patch.object(flavor.Flavor, '_flavor_get_by_flavor_id_from_db')
     @mock.patch.object(flavor, '_flavor_create')
     @mock.patch.object(fields.ResourceClass, 'normalize_name')
     @mock.patch.object(driver.RSDDriver, 'conv_GiB_to_MiB')
     def test_create_flavors_success(self, conv_mem, norm_name, flav_create,
-                                    get_flav, admin_context):
+                                    get_flav, admin_context, check_chas):
         """Test creation of new flavors for a System, success."""
         # Set up the mock objects for a sucessful creation test
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
+        chas_col = self.RSD.driver.PODM.get_chassis_collection.return_value
+        chas_col.members_identities = ['/redfish/v1/Chassis/Chassis1']
         sys_col.members_identities = ['/redfish/v1/Systems/System1']
         sys_col.get_member.return_value = self.system_inst
+        chas_col.get_member.return_value = self.chassis_inst
+        check_chas.return_value = ['/redfish/v1/Systems/System1']
         spec = 'resources:' + norm_name.return_value
         mem = conv_mem.return_value - 512
         proc = self.system_inst.processors.summary.count
@@ -746,6 +760,9 @@ class TestRSDDriver(base.BaseTestCase):
 
         # Check the function calls for the test
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
+        self.RSD.driver.PODM.get_chassis_collection.assert_called()
+        chas_col.get_member.assert_called_with('/redfish/v1/Chassis/Chassis1')
+        check_chas.assert_called_once_with(self.chassis_inst)
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
         conv_mem.assert_called_with(self.system_inst.memory_summary.size_gib)
         norm_name.assert_called_with(flav_id)
@@ -762,32 +779,44 @@ class TestRSDDriver(base.BaseTestCase):
                  'extra_specs': {spec: '1'}})
         get_flav.assert_not_called()
 
+    @mock.patch.object(driver.RSDDriver, 'check_chassis_systems')
     @mock.patch.object(context, 'get_admin_context')
     @mock.patch.object(flavor.Flavor, '_flavor_get_by_flavor_id_from_db')
     @mock.patch.object(flavor, '_flavor_create')
     @mock.patch.object(fields.ResourceClass, 'normalize_name')
     @mock.patch.object(driver.RSDDriver, 'conv_GiB_to_MiB')
     def test_create_flavors_exists(self, conv_mem, norm_name, flav_create,
-                                   get_flav, admin_context):
+                                   get_flav, admin_context, check_chas):
         """Test failing to create a flavor that already exists."""
         # Set up mocks to ensure flavors fail to be created
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
+        chas_col = self.RSD.driver.PODM.get_chassis_collection.return_value
+        chas_col.members_identities = ['/redfish/v1/Chassis/Chassis1']
         sys_col.members_identities = ['/redfish/v1/Systems/System1']
         sys_col.get_member.return_value = self.system_inst
+        chas_col.get_member.return_value = self.chassis_inst
+        check_chas.return_value = ['/redfish/v1/Systems/System1']
         spec = 'resources:' + norm_name.return_value
         mem = conv_mem.return_value - 512
         proc = self.system_inst.processors.summary.count
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
-        self.RSD.rsd_flavors = {flav_id: {
-                            'id': flav_create.return_value['id'],
-                            'rsd_systems': [self.system_inst.identity]
-                            }}
+        self.RSD.rsd_flavors = {
+                flav_id: {
+                    'id': flav_create.return_value['id'],
+                    'rsd_systems': {
+                        self.chassis_inst.path: self.system_inst.identity
+                        }
+                    }
+                }
         flav_create.return_value = Exception
         # Run test to try and create new flavors based on available systems
         self.RSD._create_flavors()
 
         # Confirm no new flavors have been created
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
+        self.RSD.driver.PODM.get_chassis_collection.assert_called()
+        chas_col.get_member.assert_called_with('/redfish/v1/Chassis/Chassis1')
+        check_chas.assert_called_once_with(self.chassis_inst)
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
         conv_mem.assert_called_with(self.system_inst.memory_summary.size_gib)
         norm_name.assert_called_with(flav_id)
@@ -848,8 +877,14 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         sys_col.get_member.return_value = self.system_inst
         self.RSD.rsd_flavors = {
-                'mock_flav_id': {'id': 'flav_id',
-                                 'rsd_systems': [self.system_inst.identity]}}
+                'mock_flav_id': {
+                    'id': 'flav_id',
+                    'rsd_systems': {
+                        '/redfish/v1/Chassis/Chassis1':
+                        self.system_inst.identity
+                        }
+                    }
+                }
         self.RSD.check_flavors(sys_col, ['/redfish/v1/Systems/System1'])
 
         # Confirm the list of available flavors
@@ -868,7 +903,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         self.RSD.rsd_flavors = {
                 'mock_flav_id': {'id': 'flav_id',
-                                 'rsd_systems': [sys_str]}}
+                                 'rsd_systems': {self.chassis_inst: sys_str}}}
         self.RSD.check_flavors(sys_col, [sys_str])
 
         # Confirm the list of availbable flavors

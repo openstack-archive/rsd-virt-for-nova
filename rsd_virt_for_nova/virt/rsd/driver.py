@@ -75,6 +75,7 @@ class RSDDriver(driver.ComputeDriver):
         self.driver = rsd.PODM_connection()
         self.instances = OrderedDict()
         self.rsd_flavors = OrderedDict()
+        self.chas_systems = OrderedDict()
         self._nodes = []
         self._composed_nodes = OrderedDict()
         self.instance_node = None
@@ -136,7 +137,7 @@ class RSDDriver(driver.ComputeDriver):
         COMPOSED_NODE_COL = self.driver.PODM.get_node_collection()
         node_inst = None
         flav_id = instance.flavor.flavorid
-        sys_list = self.rsd_flavors[flav_id]['rsd_systems']
+        sys_list = self.rsd_flavors[flav_id]['rsd_systems'][instance.node]
         for n in COMPOSED_NODE_COL.members_identities:
             try:
                 node_inst = self.driver.PODM.get_node(n)
@@ -194,6 +195,7 @@ class RSDDriver(driver.ComputeDriver):
     def get_available_resource(self, nodename):
         """Update compute manager resource info on ComputeNode table."""
         cpu_info = ''
+        cha_sys = []
 
         SYSTEM_COL = self.driver.PODM.get_system_collection()
         members = SYSTEM_COL.members_identities
@@ -434,46 +436,66 @@ class RSDDriver(driver.ComputeDriver):
     def _create_flavors(self):
         """Auto-generate the flavors for the compute systems available."""
         SYSTEM_COL = self.driver.PODM.get_system_collection()
-        for s in SYSTEM_COL.members_identities:
-            sys = SYSTEM_COL.get_member(s)
-            mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
-            proc = sys.processors.summary.count
-            flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
-            res = fields.ResourceClass.normalize_name(flav_id)
-            spec = 'resources:' + res
-            values = {
-                'name': 'RSD-' + flav_id,
-                'flavorid': flav_id,
-                'memory_mb': mem,
-                'vcpus': proc,
-                'root_gb': 0,
-                'extra_specs': {
-                    spec: '1'}
-            }
-            if sys.identity not in self.rsd_flavors:
-                try:
-                    LOG.debug("New flavor for system: %s", sys.identity)
-                    rsd_flav = flavor._flavor_create(
-                       context.get_admin_context(), values)
-                    self.rsd_flavors[flav_id] = {
-                            'id': rsd_flav['id'],
-                            'rsd_systems': [sys.identity]
-                            }
-                    self._nodes = self._init_nodes()
-                except Exception as ex:
-                    LOG.debug(
-                        "A flavor already exists for this rsd system: %s", ex)
-                    ex_flav = flavor.Flavor._flavor_get_by_flavor_id_from_db(
-                        context.get_admin_context(), flav_id)
-                    if flav_id not in self.rsd_flavors.keys():
+        CHASSIS_COL = self.driver.PODM.get_chassis_collection()
+        for c in CHASSIS_COL.members_identities:
+            chas = CHASSIS_COL.get_member(c)
+            cha_sys = self.check_chassis_systems(chas)
+
+            for s in cha_sys:
+                sys = SYSTEM_COL.get_member(s)
+                mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
+                proc = sys.processors.summary.count
+                flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
+                res = fields.ResourceClass.normalize_name(flav_id)
+                spec = 'resources:' + res
+                values = {
+                    'name': 'RSD-' + flav_id,
+                    'flavorid': flav_id,
+                    'memory_mb': mem,
+                    'vcpus': proc,
+                    'root_gb': 0,
+                    'extra_specs': {
+                        spec: '1'}
+                }
+                if sys.identity not in self.rsd_flavors:
+                    try:
+                        LOG.debug("New flavor for system: %s", sys.identity)
+                        flavor._flavor_create(
+                                context.get_admin_context(), values)
+                        self.chas_systems[str(chas.path)] = [str(sys.identity)]
                         self.rsd_flavors[flav_id] = {
-                                'id': ex_flav['id'],
-                                'rsd_systems': [sys.identity]
+                                'rsd_systems': self.chas_systems
                                 }
-                    else:
-                        sys_list = self.rsd_flavors[flav_id]['rsd_systems']
-                        sys_list.append(sys.identity)
-                        self.rsd_flavors[flav_id]['rsd_systems'] = sys_list
+                        self._nodes = self._init_nodes()
+                    except Exception as ex:
+                        LOG.debug(
+                             "A flavor already exists for this system: %s", ex)
+                        flavor.Flavor._flavor_get_by_flavor_id_from_db(
+                                context.get_admin_context(), flav_id)
+                        if flav_id not in self.rsd_flavors.keys():
+                            self.chas_systems[str(chas.path)] = [
+                                    str(sys.identity)]
+                            self.rsd_flavors[flav_id] = {
+                                'rsd_systems': self.chas_systems
+                                }
+
+                        else:
+                            chassis_ = self.rsd_flavors[flav_id]['rsd_systems']
+                            if str(chas.path) not in chassis_.keys():
+                                self.chas_systems[str(chas.path)] = [
+                                        str(sys.identity)]
+                                self.rsd_flavors[flav_id] = {
+                                    'rsd_systems': self.chas_systems
+                                    }
+                            else:
+                                systems = self.rsd_flavors[
+                                    flav_id]['rsd_systems'][str(chas.path)]
+                                if str(sys.identity) not in systems:
+                                    systems.append(str(sys.identity))
+                                    self.chas_systems[str(chas.path)] = systems
+                                    self.rsd_flavors[flav_id] = {
+                                        'rsd_systems': self.chas_systems
+                                        }
 
     def check_flavors(self, collection, systems):
         """Check if flavors should be deleted based on system removal."""
@@ -500,15 +522,18 @@ class RSDDriver(driver.ComputeDriver):
                         LOG.warn("Flavor not found exception: %s", ex)
 
         for k in list(self.rsd_flavors):
-            sys_list = self.rsd_flavors[k]['rsd_systems']
-            for s in sys_list:
-                if s not in sys_ids:
-                    try:
-                        rsd_id = self.rsd_flavors[k]['id']
-                        flavor._flavor_destroy(
-                                context.get_admin_context(), rsd_id)
-                        LOG.debug("Deleting flavor for removed systems: %s", k)
-                        del self.rsd_flavors[k]
-                    except KeyError as k_ex:
-                        LOG.warn("Flavor has already been deleted:%s", k_ex)
+            if k in self.rsd_flavors.keys():
+                chas_list = self.rsd_flavors[k]['rsd_systems'].keys()
+                for c in chas_list:
+                    sys_list = self.rsd_flavors[k]['rsd_systems'][c]
+                    for s in sys_list:
+                        if s not in sys_ids:
+                            try:
+                                rsd_id = self.rsd_flavors[k]['id']
+                                flavor._flavor_destroy(
+                                    context.get_admin_context(), rsd_id)
+                                LOG.debug("Deleting flavor: %s", k)
+                                del self.rsd_flavors[k]
+                            except KeyError as k_ex:
+                                LOG.warn("Flavor doesn't exist:%s", k_ex)
         return

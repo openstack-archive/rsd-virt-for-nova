@@ -259,26 +259,22 @@ class TestRSDDriver(base.BaseTestCase):
 
         info.assert_not_called()
 
-    @mock.patch.object(driver.RSDDriver, '_init_nodes')
-    def test_get_available_nodes_false_refresh(self, init_nodes):
+    def test_get_available_nodes_false_refresh(self):
         """Test getting a list of the available nodes, no refresh."""
         # Run test checking the list of available nodes
         nodes = self.RSD.get_available_nodes(refresh=False)
 
         # Confirm that the correst functions are called and all of the correct
         # nodes are available
-        init_nodes.assert_called_once()
         self.assertEqual(nodes, self.RSD._nodes)
 
-    @mock.patch.object(driver.RSDDriver, '_init_nodes')
-    def test_get_available_nodes_true_refresh(self, init_nodes):
+    def test_get_available_nodes_true_refresh(self):
         """Test getting a list of the available nodes, with refresh."""
         # Run test checking the list of available nodes, refresh
         nodes = self.RSD.get_available_nodes(refresh=True)
 
         # Confirm that the correst functions are called and all of the correct
         # nodes are available
-        init_nodes.assert_called_once()
         self.assertEqual(nodes, self.RSD._nodes)
 
     @mock.patch.object(driver.RSDDriver, 'get_available_nodes')
@@ -418,32 +414,6 @@ class TestRSDDriver(base.BaseTestCase):
                           [('x86_64', 'baremetal', 'hvm')],
                           'vcpus': proc_info.return_value,
                           'vcpus_used': 0}, resources)
-
-    @mock.patch.object(driver.RSDDriver, '_create_flavors')
-    @mock.patch.object(driver.RSDDriver, 'check_flavors')
-    @mock.patch.object(driver.RSDDriver, 'check_chassis_systems')
-    @mock.patch.object(versionutils, 'convert_version_to_int')
-    @mock.patch.object(driver.RSDDriver, 'get_sys_proc_info')
-    @mock.patch.object(driver.RSDDriver, 'get_sys_memory_info')
-    def test_get_available_resource_failure(self, mem_info, proc_info, conv_v,
-                                            check_chas, check_flav,
-                                            create_flav):
-        """Test failing to available resources for a node."""
-        # If there is no composed node for the compute node = Failure
-        self.RSD._nodes = []
-        resources = self.RSD.get_available_resource(self.chassis_inst.identity)
-
-        # Confirm that there are no available resource to boot composed node
-        # instances from
-        self.RSD.driver.PODM.get_chassis_collection.assert_called_once()
-        self.RSD.driver.PODM.get_system_collection.assert_not_called()
-        check_chas.assert_not_called()
-        mem_info.assert_not_called()
-        proc_info.assert_not_called()
-        conv_v.assert_not_called()
-        check_flav.assert_not_called()
-        create_flav.assert_not_called()
-        self.assertEqual(resources, {})
 
     @mock.patch.object(driver.RSDDriver, 'create_child_inventory')
     @mock.patch.object(driver.RSDDriver, 'create_inventory')

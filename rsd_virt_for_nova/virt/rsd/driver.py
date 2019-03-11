@@ -75,7 +75,7 @@ class RSDDriver(driver.ComputeDriver):
         self.driver = rsd.PODM_connection()
         self.instances = OrderedDict()
         self.rsd_flavors = OrderedDict()
-        self._nodes = self._init_nodes()
+        self._nodes = []
         self._composed_nodes = OrderedDict()
         self.instance_node = None
 
@@ -85,15 +85,21 @@ class RSDDriver(driver.ComputeDriver):
         nodes = []
         CHASSIS_COL = self.driver.PODM.get_chassis_collection()
         for c in CHASSIS_COL.members_identities:
-            chas = CHASSIS_COL.get_member(c)
-            cha_sys = self.check_chassis_systems(chas)
-            if cha_sys != []:
-                nodes.append(c)
+            try:
+                chas = CHASSIS_COL.get_member(c)
+                cha_sys = self.check_chassis_systems(chas)
+                if cha_sys != []:
+                    nodes.append(c)
+            except Exception as c_ex:
+                LOG.warn("Failed to get chassis information: %s", c_ex)
+                nodes = []
+
         set_nodes(nodes)
         return copy.copy(PODM_NODE)
 
     def init_host(self, host):
         """Initialize anything that is necessary for the driver to function."""
+        self._nodes = self._init_nodes()
         return host
 
     def get_info(self, instance):
@@ -105,7 +111,8 @@ class RSDDriver(driver.ComputeDriver):
 
     def get_available_nodes(self, refresh=True):
         """Return nodenames of all nodes managed by the compute service."""
-        self._nodes = self._init_nodes()
+        if self._nodes == []:
+            self._nodes = self._init_nodes()
         return self._nodes
 
     def node_is_available(self, nodename):
@@ -187,15 +194,16 @@ class RSDDriver(driver.ComputeDriver):
     def get_available_resource(self, nodename):
         """Update compute manager resource info on ComputeNode table."""
         cpu_info = ''
-        if nodename not in self._nodes:
-            return {}
 
         SYSTEM_COL = self.driver.PODM.get_system_collection()
         members = SYSTEM_COL.members_identities
 
         CHASSIS_COL = self.driver.PODM.get_chassis_collection()
-        chas = CHASSIS_COL.get_member(nodename)
-        cha_sys = self.check_chassis_systems(chas)
+        try:
+            chas = CHASSIS_COL.get_member(nodename)
+            cha_sys = self.check_chassis_systems(chas)
+        except Exception as ex:
+            LOG.warn("Failed to retrieve chassis information:%s", ex)
 
         # Check if all flavors are valid
         self.check_flavors(SYSTEM_COL, members)
@@ -237,14 +245,36 @@ class RSDDriver(driver.ComputeDriver):
         SYSTEM_COL = self.driver.PODM.get_system_collection()
         sys_s = SYSTEM_COL.members_identities
         systems = []
+        sys_trees = {}
+        chas_ids = []
+        cha_sys = []
         for s in sys_s:
             systems.append(s)
 
         CHASSIS_COL = self.driver.PODM.get_chassis_collection()
+        chas_s = CHASSIS_COL.members_identities
+        for c in chas_s:
+            chas_ids.append(c)
+
+        for chas_tree in provider_tree.roots:
+            sys_trees = chas_tree.children
+            for s_tree in sys_trees.values():
+                # Removing all RPS that don't have an associated system
+                if s_tree.name not in systems:
+                    provider_tree.remove(str(s_tree.uuid))
+
+                chassis = CHASSIS_COL.get_member(chas_tree.name)
+                if self.check_chassis_systems(chassis) == []:
+                    provider_tree.remove(str(chas_tree.uuid))
+        self._nodes = self._init_nodes()
 
         for c in CHASSIS_COL.members_identities:
-            chas = CHASSIS_COL.get_member(nodename)
-            cha_sys = self.check_chassis_systems(chas)
+            try:
+                chas = CHASSIS_COL.get_member(nodename)
+                cha_sys = self.check_chassis_systems(chas)
+            except Exception as c_ex:
+                LOG.warn("Failed to get chassis informantion:%s", c_ex)
+
             if cha_sys != []:
                 for s in cha_sys:
                     sys_inv = self.create_child_inventory(s)
@@ -253,8 +283,8 @@ class RSDDriver(driver.ComputeDriver):
                     except Exception as ex:
                         LOG.warn("Failed to create new RP: %s", ex)
                     provider_tree.update_inventory(s, sys_inv)
-            chas_inv = self.create_inventory(cha_sys)
-            provider_tree.update_inventory(nodename, chas_inv)
+                chas_inv = self.create_inventory(cha_sys)
+                provider_tree.update_inventory(nodename, chas_inv)
 
     def get_sys_proc_info(self, systems):
         """Track vcpus made available by the PODM."""
@@ -429,6 +459,7 @@ class RSDDriver(driver.ComputeDriver):
                             'id': rsd_flav['id'],
                             'rsd_systems': [sys.identity]
                             }
+                    self._nodes = self._init_nodes()
                 except Exception as ex:
                     LOG.debug(
                         "A flavor already exists for this rsd system: %s", ex)
@@ -472,8 +503,12 @@ class RSDDriver(driver.ComputeDriver):
             sys_list = self.rsd_flavors[k]['rsd_systems']
             for s in sys_list:
                 if s not in sys_ids:
-                    rsd_id = self.rsd_flavors[k]['id']
-                    flavor._flavor_destroy(context.get_admin_context(), rsd_id)
-                    LOG.debug("Deleting flavor for removed systems: %s", k)
-                    del self.rsd_flavors[k]
+                    try:
+                        rsd_id = self.rsd_flavors[k]['id']
+                        flavor._flavor_destroy(
+                                context.get_admin_context(), rsd_id)
+                        LOG.debug("Deleting flavor for removed systems: %s", k)
+                        del self.rsd_flavors[k]
+                    except KeyError as k_ex:
+                        LOG.warn("Flavor has already been deleted:%s", k_ex)
         return

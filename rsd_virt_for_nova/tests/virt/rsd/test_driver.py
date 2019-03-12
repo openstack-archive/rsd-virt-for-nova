@@ -828,22 +828,3 @@ class TestRSDDriver(base.BaseTestCase):
         flav_list.assert_called_with(get_context.return_value)
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
         flav_destroy.assert_not_called()
-
-    @mock.patch.object(context, 'get_admin_context')
-    @mock.patch.object(flavor, '_flavor_destroy')
-    def test_check_flavors_success_update(self, flav_destroy, get_context):
-        """Test checking existing flavors, update/delete flavors, success."""
-        # Setup a test for flavors that need to be delete in a flavor check
-        sys_str = '/redfish/v1/Systems/System1'
-        sys_col = self.RSD.driver.PODM.get_system_collection.return_value
-        self.RSD.rsd_flavors = {
-                'mock_flav_id': {'id': 'flav_id',
-                                 'rsd_systems': [sys_str]}}
-        self.RSD.check_flavors(sys_col, [sys_str])
-
-        # Confirm the list of availbable flavors
-        # Delete all flavors that no longer have associated systems
-        sys_col.get_member.assert_called_with(sys_str)
-        get_context.assert_called()
-        flav_destroy.assert_called_with(get_context.return_value, 'flav_id')
-        self.assertEqual(self.RSD.rsd_flavors, {})

@@ -1,0 +1,61 @@
+- project:
+    experimental:
+      jobs:
+        - rsd-virt-for-nova-bin
+        - rsd-virt-for-nova-bin-centos-7
+        - rsd-virt-for-nova-src
+        - rsd-virt-for-nova-src-centos-7
+
+- job:
+    name: rsd-virt-for-nova-bin
+    parent: legacy-dsvm-base
+    run: playbooks/legacy/dsvm-rsd-virt-for-nova-bin/run.yaml
+    post-run: playbooks/legacy/dsvm-rsd-virt-for-nova-bin/post.yaml
+    timeout: 7800
+    required-projects:
+      - openstack-infra/devstack-gate
+      - openstack/nova
+      - openstack/placement
+      - openstack/rsd-lib
+      - openstack/sushy
+
+- job:
+    name: rsd-virt-for-nova-bin-centos-7
+    parent: legacy-dsvm-base
+    run: playbooks/legacy/dsvm-rsd-virt-for-nova-bin-centos-7/run.yaml
+    post-run: playbooks/legacy/dsvm-rsd-virt-for-nova-bin-centos-7/post.yaml
+    timeout: 7800
+    nodeset: legacy-centos-7
+    required-projects:
+      - openstack-infra/devstack-gate
+      - openstack/nova
+      - openstack/placement
+      - openstack/rsd-lib
+      - openstack/sushy
+
+- job:
+    name: rsd-virt-for-nova-src
+    parent: legacy-dsvm-base
+    run: playbooks/legacy/dsvm-rsd-virt-for-nova-src/run.yaml
+    post-run: playbooks/legacy/dsvm-rsd-virt-for-nova-src/post.yaml
+    timeout: 7800
+    required-projects:
+      - openstack-infra/devstack-gate
+      - openstack/nova
+      - openstack/placement
+      - openstack/rsd-lib
+      - openstack/sushy
+
+- job:
+    name: rsd-virt-for-nova-src-centos-7
+    parent: legacy-dsvm-base
+    run: playbooks/legacy/dsvm-rsd-virt-for-nova-src-centos-7/run.yaml
+    post-run: playbooks/legacy/dsvm-rsd-virt-for-nova-src-centos-7/post.yaml
+    timeout: 7800
+    nodeset: legacy-centos-7
+    required-projects:
+      - openstack-infra/devstack-gate
+      - openstack/nova
+      - openstack/placement
+      - openstack/rsd-lib
+      - openstack/sushy

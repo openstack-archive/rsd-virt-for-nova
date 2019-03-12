@@ -1,0 +1,7 @@
+#!/bin/bash -xe
+
+export DEVSTACK_GATE_TEMPEST=0
+export DEVSTACK_LOCAL_CONFIG='
+enable_plugin rsd-virt-for-nova https://github.com/openstack/rsd-virt-for-nova
+NOVA_RSD_REPO_ENABLE=True
+'

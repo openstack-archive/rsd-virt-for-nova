@@ -1,0 +1,9 @@
+- job:
+    name: rsd-virt-for-nova-src
+    parent: nova-dsvm-base
+    irrelevant-files:
+      - ^test-requirements.txt$
+      - ^rsd-virt-for-nova/tests/.*$
+    timeout: 5400
+    required-projects:
+      - openstack/rsd-virt-for-nova

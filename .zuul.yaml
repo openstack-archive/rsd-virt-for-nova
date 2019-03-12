@@ -1,3 +1,4 @@
 - project:
     templates:
-      - noop-jobs
+      - openstack-python-jobs
+      - openstack-python36-jobs

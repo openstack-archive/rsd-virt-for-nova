@@ -4,4 +4,3 @@
       - openstack-python36-jobs
       - check-requirements
       - openstack-cover-jobs
-      - openstack-lower-constraints-jobs

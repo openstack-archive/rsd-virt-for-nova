@@ -39,7 +39,22 @@ rsd_opts = [
                     'PODM. '),
     cfg.IntOpt('podm_port',
                default=8443,
-               help='Specifying port on PODM for communication. ')
+               help='Specifying port on PODM for communication. '),
+    cfg.StrOpt('auth_password',
+               default='',
+               help='Password required to authenticate to keystone. '),
+    cfg.StrOpt('auth_url',
+               default='',
+               help='URL require to authenticate to keystone. '),
+    cfg.IntOpt('identity_version',
+               default=3,
+               help='Keystone version. '),
+    cfg.StrOpt('tenant_name',
+               default='',
+               help='Name of the openstack tenant. '),
+    cfg.StrOpt('username',
+               default='',
+               help='OpenStack username to authenticate to keystone. ')
 ]
 
 STATIC_OPTIONS = (rsd_opts)

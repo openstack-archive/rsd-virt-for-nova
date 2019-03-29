@@ -23,30 +23,26 @@ import copy
 
 import json
 
-from collections import OrderedDict
+import requests
 
-from nova import context
+from collections import OrderedDict
 
 from nova import exception
 
-from nova import objects
-
 from nova import rc_fields as fields
 
+from nova.api import auth
 from nova.compute import power_state
 from nova.objects import fields as obj_fields
-from nova.objects import flavor
 from nova.virt import driver
 from nova.virt import hardware
 
-from rsd_virt_for_nova.conf import rsd as cfg
 from rsd_virt_for_nova.virt import rsd
+from rsd_virt_for_nova.virt.rsd import flavor_management
 
 from oslo_log import log as logging
 
 from oslo_utils import versionutils
-
-CONF = cfg.CONF
 
 LOG = logging.getLogger(__name__)
 
@@ -72,6 +68,7 @@ class RSDDriver(driver.ComputeDriver):
         """Initialize the RSDDriver."""
         super(RSDDriver, self).__init__(virtapi)
         # Initializes vairables to track compute nodes and instances
+        self.flavor_manager = flavor_management.FlavorManager()
         self.driver = rsd.PODM_connection()
         self.instances = OrderedDict()
         self.rsd_flavors = OrderedDict()
@@ -86,21 +83,16 @@ class RSDDriver(driver.ComputeDriver):
         nodes = []
         CHASSIS_COL = self.driver.PODM.get_chassis_collection()
         for c in CHASSIS_COL.members_identities:
-            try:
-                chas = CHASSIS_COL.get_member(c)
-                cha_sys = self.check_chassis_systems(chas)
-                if cha_sys != []:
-                    nodes.append(c)
-            except Exception as c_ex:
-                LOG.warn("Failed to get chassis information: %s", c_ex)
-                nodes = []
+            chas = CHASSIS_COL.get_member(c)
+            cha_sys = self.check_chassis_systems(chas)
+            if cha_sys != []:
+                nodes.append(c)
 
         set_nodes(nodes)
         return copy.copy(PODM_NODE)
 
     def init_host(self, host):
         """Initialize anything that is necessary for the driver to function."""
-        self._nodes = self._init_nodes()
         return host
 
     def get_info(self, instance):
@@ -197,15 +189,15 @@ class RSDDriver(driver.ComputeDriver):
         cpu_info = ''
         cha_sys = []
 
+        if nodename not in self._nodes:
+            return {}
+
         SYSTEM_COL = self.driver.PODM.get_system_collection()
         members = SYSTEM_COL.members_identities
 
         CHASSIS_COL = self.driver.PODM.get_chassis_collection()
-        try:
-            chas = CHASSIS_COL.get_member(nodename)
-            cha_sys = self.check_chassis_systems(chas)
-        except Exception as ex:
-            LOG.warn("Failed to retrieve chassis information:%s", ex)
+        chas = CHASSIS_COL.get_member(nodename)
+        cha_sys = self.check_chassis_systems(chas)
 
         # Check if all flavors are valid
         self.check_flavors(SYSTEM_COL, members)
@@ -258,18 +250,6 @@ class RSDDriver(driver.ComputeDriver):
         for c in chas_s:
             chas_ids.append(c)
 
-        for chas_tree in provider_tree.roots:
-            sys_trees = chas_tree.children
-            for s_tree in sys_trees.values():
-                # Removing all RPS that don't have an associated system
-                if s_tree.name not in systems:
-                    provider_tree.remove(str(s_tree.uuid))
-
-                chassis = CHASSIS_COL.get_member(chas_tree.name)
-                if self.check_chassis_systems(chassis) == []:
-                    provider_tree.remove(str(chas_tree.uuid))
-        self._nodes = self._init_nodes()
-
         for c in CHASSIS_COL.members_identities:
             try:
                 chas = CHASSIS_COL.get_member(nodename)
@@ -287,6 +267,20 @@ class RSDDriver(driver.ComputeDriver):
                     provider_tree.update_inventory(s, sys_inv)
                 chas_inv = self.create_inventory(cha_sys)
                 provider_tree.update_inventory(nodename, chas_inv)
+
+        for chas_tree in provider_tree.roots:
+            if chas_tree.name == nodename:
+                sys_trees = chas_tree.children
+                for s_tree in sys_trees.values():
+                    # Removing all RPS that don't have an associated system
+                    if s_tree.name not in systems:
+                        provider_tree.remove(str(s_tree.uuid))
+
+                chassis = CHASSIS_COL.get_member(chas_tree.name)
+                if self.check_chassis_systems(chassis) == []:
+                    provider_tree.remove(str(chas_tree.uuid))
+                    self._nodes = self._init_nodes()
+                    return
 
     def get_sys_proc_info(self, systems):
         """Track vcpus made available by the PODM."""
@@ -447,55 +441,59 @@ class RSDDriver(driver.ComputeDriver):
                 proc = sys.processors.summary.count
                 flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
                 res = fields.ResourceClass.normalize_name(flav_id)
-                spec = 'resources:' + res
-                values = {
-                    'name': 'RSD-' + flav_id,
-                    'flavorid': flav_id,
-                    'memory_mb': mem,
-                    'vcpus': proc,
-                    'root_gb': 0,
-                    'extra_specs': {
-                        spec: '1'}
+                spec = str('resources:' + res)
+                payload = {
+                    "flavor": {
+                        'name': 'RSD-' + flav_id,
+                        'id': flav_id,
+                        'ram': mem,
+                        'vcpus': proc,
+                        'disk': 0
+                        }
                 }
-                if sys.identity not in self.rsd_flavors:
+                if flav_id not in self.rsd_flavors.keys():
                     try:
-                        LOG.debug("New flavor for system: %s", sys.identity)
-                        flavor._flavor_create(
-                                context.get_admin_context(), values)
-                        self.chas_systems[str(chas.path)] = [str(sys.identity)]
+                        resp = requests.post(
+                                self._url_base, data=json.dumps(payload),
+                                headers=self.headers)
+                    except Exception as ex:
+                        LOG.warn("Failed to create the new flavor: %s, %s",
+                                 ex, json.loads(resp.text))
+                    try:
+                        extra_pay = {
+                                'extra_specs': {
+                                         spec: '1'}
+                                }
+                        update_url = self.flavor_manager._create_request_url(
+                                flav_id, 'update')
+                        up_resp = requests.post(
+                               update_url, data=json.dumps(extra_pay),
+                               headers=self.headers)
+                        self.rsd_flavors[flav_id] = {
+                            'id': flav_id,
+                            'rsd_systems': {
+                                str(chas.path): str(sys.identity)}
+                            }
+                    except Exception as ex:
+                        LOG.warn("Failed to add extra_specs:%s, %s", ex,
+                                 json.loads(up_resp.text))
+                else:
+                    chassis_ = self.rsd_flavors[flav_id]['rsd_systems']
+                    if str(chas.path) not in chassis_.keys():
+                        self.chas_systems[str(chas.path)] = [
+                                str(sys.identity)]
                         self.rsd_flavors[flav_id] = {
                                 'rsd_systems': self.chas_systems
-                                }
-                        self._nodes = self._init_nodes()
-                    except Exception as ex:
-                        LOG.debug(
-                             "A flavor already exists for this system: %s", ex)
-                        flavor.Flavor._flavor_get_by_flavor_id_from_db(
-                                context.get_admin_context(), flav_id)
-                        if flav_id not in self.rsd_flavors.keys():
-                            self.chas_systems[str(chas.path)] = [
-                                    str(sys.identity)]
+                            }
+                    else:
+                        systems = self.rsd_flavors[
+                            flav_id]['rsd_systems'][str(chas.path)]
+                        if str(sys.identity) not in systems:
+                            systems.append(str(sys.identity))
+                            self.chas_systems[str(chas.path)] = systems
                             self.rsd_flavors[flav_id] = {
-                                'rsd_systems': self.chas_systems
-                                }
-
-                        else:
-                            chassis_ = self.rsd_flavors[flav_id]['rsd_systems']
-                            if str(chas.path) not in chassis_.keys():
-                                self.chas_systems[str(chas.path)] = [
-                                        str(sys.identity)]
-                                self.rsd_flavors[flav_id] = {
                                     'rsd_systems': self.chas_systems
                                     }
-                            else:
-                                systems = self.rsd_flavors[
-                                    flav_id]['rsd_systems'][str(chas.path)]
-                                if str(sys.identity) not in systems:
-                                    systems.append(str(sys.identity))
-                                    self.chas_systems[str(chas.path)] = systems
-                                    self.rsd_flavors[flav_id] = {
-                                        'rsd_systems': self.chas_systems
-                                        }
 
     def check_flavors(self, collection, systems):
         """Check if flavors should be deleted based on system removal."""
@@ -510,30 +508,34 @@ class RSDDriver(driver.ComputeDriver):
             flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
             flav_ids.append(flav_id)
 
-        f_list = objects.FlavorList.get_all(context.get_admin_context())
+        self._keystone = self.flavor_manager.keystone_req()
+        self._auth_token = self._keystone.auth_token
+
+        self._url_base = self.flavor_manager._on_authenticate()
+        self.headers = self.flavor_manager.get_headers(self._auth_token)
+
+        req = requests.get(self._url_base, headers=self.headers)
+        f_list = json.loads(req.text)['flavors']
         for f in f_list:
-            if 'RSD' in f.name:
-                if f.flavorid not in flav_ids:
-                    try:
-                        flavor._flavor_destroy(
-                                context.get_admin_context(),
-                                flavor_id=f.flavorid)
-                    except exception.FlavorNotFound as ex:
-                        LOG.warn("Flavor not found exception: %s", ex)
+            if 'RSD' in f['name']:
+                if f['id'] not in flav_ids:
+                    del_url = self.flavor_manager._create_request_url(
+                            f['id'], 'delete')
+                    fla_del = requests.delete(del_url, headers=self.headers)
 
         for k in list(self.rsd_flavors):
-            if k in self.rsd_flavors.keys():
-                chas_list = self.rsd_flavors[k]['rsd_systems'].keys()
-                for c in chas_list:
-                    sys_list = self.rsd_flavors[k]['rsd_systems'][c]
-                    for s in sys_list:
-                        if s not in sys_ids:
-                            try:
-                                rsd_id = self.rsd_flavors[k]['id']
-                                flavor._flavor_destroy(
-                                    context.get_admin_context(), rsd_id)
-                                LOG.debug("Deleting flavor: %s", k)
-                                del self.rsd_flavors[k]
-                            except KeyError as k_ex:
-                                LOG.warn("Flavor doesn't exist:%s", k_ex)
+            sys_list = self.rsd_flavors[k]['rsd_systems'].values()
+            for s in sys_list:
+                if s not in sys_ids:
+                    rsd_id = self.rsd_flavors[k]['id']
+                    del_url = self.flavor_manager._create_request_url(
+                            rsd_id, 'delete')
+                    try:
+                        LOG.debug("Deleting flavor for removed systems: %s", k)
+                        fla_del = requests.delete(del_url,
+                                headers=self.headers)
+                        del self.rsd_flavors[k]
+                    except Exception as ex:
+                        LOG.warn("Failed to delete flavor: %s, %s",
+                                json.loads(fla_del.text), ex)
         return

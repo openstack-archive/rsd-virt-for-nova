@@ -1,6 +1,10 @@
 # This driver is enabled in override-defaults with:
 # VIRT_DRIVER=${VIRT_DRIVER:-rsd}
 
+# Auth info
+OS_AUTH_URL="$KEYSTONE_SERVICE_URI/v$IDENTITY_API_VERSION"
+OS_IDENTITY_API_VERSION=${IDENTITY_API_VERSION:-3}
+
 if [ "$VERBOSE" == "False" ]; then
     # allow local debugging
     set -o xtrace

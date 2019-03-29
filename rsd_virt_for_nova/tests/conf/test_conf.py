@@ -40,3 +40,13 @@ class TestConf(test.NoDBTestCase):
         self.assertEqual('admin', CONF.rsd.podm_password)
         # PODM port
         self.assertEqual(8443, CONF.rsd.podm_port)
+        # auth password
+        self.assertEqual('', CONF.rsd.auth_password)
+        # auth url
+        self.assertEqual('', CONF.rsd.auth_url)
+        # keystone version
+        self.assertEqual(3, CONF.rsd.identity_version)
+        # Tenant Name
+        self.assertEqual('', CONF.rsd.tenant_name)
+        # Auth username
+        self.assertEqual('', CONF.rsd.username)

@@ -35,6 +35,11 @@ function configure_nova_rsd {
     iniset $NOVA_CONF rsd podm_user ${PODM_USER}
     iniset $NOVA_CONF rsd podm_password ${PODM_PASSWD}
     iniset $NOVA_CONF rsd podm_port ${PODM_PORT}
+    iniset $NOVA_CONF rsd auth_password ${OS_PASSWORD}
+    iniset $NOVA_CONF rsd auth_url ${OS_AUTH_URL}
+    iniset $NOVA_CONF rsd identity_version ${OS_IDENTITY_API_VERSION}
+    iniset $NOVA_CONF rsd tenant_name ${OS_TENANT_NAME}
+    iniset $NOVA_CONF rsd username ${OS_USERNAME}
 }
 
 # disabling ERROR_NO_CLONE to allow this plugin work with devstack-gate

@@ -45,8 +45,7 @@ import rsd_lib
 from rsd_lib.resources.v2_1.chassis import chassis
 from rsd_lib.resources.v2_2.system import system
 
-from rsd_lib.resources.v2_3.node import node
-from rsd_lib.resources.v2_3.node import node as v2_3_node
+from rsd_lib.resources.v2_3 import node as v2_3_node
 
 from sushy import connector
 
@@ -54,14 +53,14 @@ from sushy import connector
 class FakeInstance(object):
     """A class to fake out nova instances."""
 
-    def __init__(self, name, state, uuid, new_flavor, node):
+    def __init__(self, name, state, uuid, new_flavor, new_node):
         """Initialize the variables for fake instances."""
         self.name = name
         self.power_state = state
         self.uuid = uuid
         self.display_description = None
         self.flavor = new_flavor
-        self.node = node
+        self.node = new_node
 
     def __getitem__(self, key):
         """Method to retrieve fake instance variables."""
@@ -133,14 +132,14 @@ class TestRSDDriver(base.BaseTestCase):
                   'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
-        self.node_collection = node.NodeCollection(
+        self.node_collection = v2_3_node.NodeCollection(
             self.root_conn, '/redfish/v1/Nodes', redfish_version='1.0.2')
 
         with open('rsd_virt_for_nova/tests/json_samples/node.json',
                   'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
-        self.node_inst = node.Node(
+        self.node_inst = v2_3_node.Node(
             self.root_conn, '/redfish/v1/Nodes/Node1',
             redfish_version='1.0.2')
 
@@ -148,7 +147,7 @@ class TestRSDDriver(base.BaseTestCase):
                   'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
-        self.node_ass_inst = node.Node(
+        self.node_ass_inst = v2_3_node.Node(
             self.root_conn, '/redfish/v1/Nodes/Node1',
             redfish_version='1.0.2')
 
@@ -172,9 +171,9 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD = driver.RSDDriver(fake.FakeVirtAPI())
 
         # Create Fake flavors and instances
-        gb = self.system_inst.memory_summary.size_gib
+        gb = self.system_inst.memory_summary.total_system_memory_gib
         mem = self.RSD.conv_GiB_to_MiB(gb)
-        proc = self.system_inst.processors.summary.count
+        proc = self.system_inst.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         res = fields.ResourceClass.normalize_name(self.system_inst.identity)
         spec = 'resources:' + res
@@ -322,7 +321,7 @@ class TestRSDDriver(base.BaseTestCase):
                     'id': 'flav_id',
                     'rsd_systems': {
                         '/redfish/v1/Chassis/Chassis1':
-                                self.system_inst.identity
+                                self.system_inst.path
                         }
                     }
                 }
@@ -491,7 +490,7 @@ class TestRSDDriver(base.BaseTestCase):
         # And correct proccessor information is calculated
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
-        self.assertEqual(cpus, self.system_inst.processors.summary.count)
+        self.assertEqual(cpus, 0)
 
     @mock.patch.object(driver.RSDDriver, 'conv_GiB_to_MiB')
     def test_get_sys_memory_info_failure(self, conv_mem):
@@ -514,19 +513,20 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col.members_identities = ['/redfish/v1/Systems/System1']
         sys_col.get_member.return_value = self.system_inst
         self.RSD.driver.composed_nodes = {
-            self.node_inst.system.identity: self.node_inst.identity}
+            self.node_inst.links.computer_system: self.node_inst.identity}
         # Run the test and get the result
         mem_mb = self.RSD.get_sys_memory_info(['/redfish/v1/Systems/System1'])
 
+        total_sys_mem = self.system_inst.memory_summary.total_system_memory_gib
         # Confirm that the relavant functions fail when called
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_once_with(
                 '/redfish/v1/Systems/System1')
-        conv_mem.assert_called_with(self.system_inst.memory_summary.size_gib)
+        conv_mem.assert_called_with(total_sys_mem)
         # Confirm the result is as to be expected
         self.assertEqual(
                 mem_mb,
-                conv_mem(self.system_inst.memory_summary.size_gib).__radd__())
+                conv_mem(total_sys_mem).__radd__())
 
     def test_conv_GiB_to_MiB(self):
         """Test the conversion of GiB to MiB."""
@@ -623,8 +623,10 @@ class TestRSDDriver(base.BaseTestCase):
                                       conv_mem):
         """Test creating a inventory for a provider tree."""
         # Setup test to successfully create inventory
-        sys_mem_info.return_value = self.system_inst.memory_summary.size_gib
-        sys_proc_info.return_value = self.system_inst.processors.summary.count
+        sys_mem_info.return_value = \
+                self.system_inst.memory_summary.total_system_memory_gib
+        sys_proc_info.return_value = \
+                self.system_inst.json['ProcessorSummary']['Count']
         inv = self.RSD.create_inventory([self.system_inst.identity])
 
         # Check that the correct functions are called and the inventory
@@ -656,7 +658,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         sys_col.get_member.return_value = self.system_inst
         mem = conv_mem.return_value - 512
-        proc = self.system_inst.processors.summary.count
+        proc = self.system_inst.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         child_inv = self.RSD.create_child_inventory(
                 '/redfish/v1/Systems/System1')
@@ -667,7 +669,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col.get_member.assert_called_once_with(
                 '/redfish/v1/Systems/System1')
         conv_mem.assert_called_once_with(
-                self.system_inst.memory_summary.size_gib)
+                self.system_inst.memory_summary.total_system_memory_gib)
         norm_name.assert_called_once_with(flav_id)
         self.assertEqual(child_inv, {norm_name.return_value: {
                                           'total': 1,

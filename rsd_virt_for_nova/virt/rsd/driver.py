@@ -136,11 +136,12 @@ class RSDDriver(driver.ComputeDriver):
                 LOG.warn("Malformed composed node instance:%s", ex)
 
             if node_inst is not None:
-                node_state = node_inst.composed_node_state
-                p_state = node_inst.power_state
+                node_state = node_inst.composed_node_state.lower()
+                p_state = node_inst.power_state.lower()
                 if node_state == 'assembled' and p_state == 'off':
                     # Provide nova instance with composed node info
-                    node_sys_id = node_inst.system.identity
+                    node_sys_id = node_inst.links.computer_system
+
                     if node_sys_id in sys_list:
                         self.instances[uuid] = instance
                         self._composed_nodes[uuid] = node_inst
@@ -287,8 +288,9 @@ class RSDDriver(driver.ComputeDriver):
             cpus = 0
             for s in systems:
                 ss = SYSTEM_COL.get_member(s)
-                if ss.identity in self.driver.composed_nodes.keys():
-                    cpus = cpus + ss.processors.summary.count
+                if ss.path in self.driver.composed_nodes.keys():
+                    proc = ss.json['ProcessorSummary']['Count']
+                    cpus = cpus + proc
         except Exception as ex:
             LOG.info("Failed to get processor info: %s", ex)
         return cpus
@@ -301,8 +303,8 @@ class RSDDriver(driver.ComputeDriver):
             ram = 0
             for s in systems:
                 ss = SYSTEM_COL.get_member(s)
-                if ss.identity in self.driver.composed_nodes.keys():
-                    mem = ss.memory_summary.size_gib
+                if ss.path in self.driver.composed_nodes.keys():
+                    mem = ss.memory_summary.total_system_memory_gib
                     ram = \
                         ram + self.conv_GiB_to_MiB(mem)
         except Exception as ex:
@@ -401,8 +403,9 @@ class RSDDriver(driver.ComputeDriver):
         """Create custom resources for all of the child RP's."""
         SYSTEM_COL = self.driver.PODM.get_system_collection()
         sys = SYSTEM_COL.get_member(system)
-        mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
-        proc = sys.processors.summary.count
+        mem = self.conv_GiB_to_MiB(
+                sys.memory_summary.total_system_memory_gib) - 512
+        proc = sys.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         res = fields.ResourceClass.normalize_name(flav_id)
         return {
@@ -418,7 +421,11 @@ class RSDDriver(driver.ComputeDriver):
 
     def check_chassis_systems(self, chassis):
         """Check the chassis for linked systems."""
-        systems = chassis.json['Links']['ComputerSystems']
+        try:
+            systems = chassis.json['Links']['ComputerSystems']
+        except KeyError as ke:
+            LOG.debug("No valid compute systems: %s", ke)
+            systems = []
         cha_sys = []
         for s in systems:
             cha_sys += s.values()
@@ -434,8 +441,9 @@ class RSDDriver(driver.ComputeDriver):
 
             for s in cha_sys:
                 sys = SYSTEM_COL.get_member(s)
-                mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
-                proc = sys.processors.summary.count
+                mem = self.conv_GiB_to_MiB(
+                        sys.memory_summary.total_system_memory_gib) - 512
+                proc = sys.json['ProcessorSummary']['Count']
                 flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
                 res = fields.ResourceClass.normalize_name(flav_id)
                 spec = str('resources:' + res)
@@ -468,7 +476,7 @@ class RSDDriver(driver.ComputeDriver):
                         self.rsd_flavors[flav_id] = {
                             'id': flav_id,
                             'rsd_systems': {
-                                str(chas.path): str(sys.identity)}
+                                str(chas.path): str(sys.path)}
                             }
                     except Exception as ex:
                         LOG.warn("Failed to add extra_specs:%s", ex)
@@ -476,15 +484,15 @@ class RSDDriver(driver.ComputeDriver):
                     chassis_ = self.rsd_flavors[flav_id]['rsd_systems']
                     if str(chas.path) not in chassis_.keys():
                         self.chas_systems[str(chas.path)] = [
-                                str(sys.identity)]
+                                str(sys.path)]
                         self.rsd_flavors[flav_id] = {
                                 'rsd_systems': self.chas_systems
                             }
                     else:
                         systems = self.rsd_flavors[
                             flav_id]['rsd_systems'][str(chas.path)]
-                        if str(sys.identity) not in systems:
-                            systems.append(str(sys.identity))
+                        if str(sys.path) not in systems:
+                            systems.append(str(sys.path))
                             self.chas_systems[str(chas.path)] = systems
                             self.rsd_flavors[flav_id] = {
                                     'rsd_systems': self.chas_systems
@@ -498,8 +506,9 @@ class RSDDriver(driver.ComputeDriver):
         for s in systems:
             sys = collection.get_member(s)
             sys_ids.append(sys.identity)
-            mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
-            proc = sys.processors.summary.count
+            mem = self.conv_GiB_to_MiB(
+                    sys.memory_summary.total_system_memory_gib) - 512
+            proc = sys.json['ProcessorSummary']['Count']
             flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
             flav_ids.append(flav_id)
 

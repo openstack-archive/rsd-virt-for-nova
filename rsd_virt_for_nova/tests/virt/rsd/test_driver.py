@@ -172,9 +172,9 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD = driver.RSDDriver(fake.FakeVirtAPI())
 
         # Create Fake flavors and instances
-        gb = self.system_inst.memory_summary.size_gib
+        gb = self.system_inst.memory_summary.total_system_memory_gib
         mem = self.RSD.conv_GiB_to_MiB(gb)
-        proc = self.system_inst.processors.summary.count
+        proc = self.system_inst.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         res = fields.ResourceClass.normalize_name(self.system_inst.identity)
         spec = 'resources:' + res
@@ -491,7 +491,7 @@ class TestRSDDriver(base.BaseTestCase):
         # And correct proccessor information is calculated
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
-        self.assertEqual(cpus, self.system_inst.processors.summary.count)
+        self.assertEqual(cpus, 0)
 
     @mock.patch.object(driver.RSDDriver, 'conv_GiB_to_MiB')
     def test_get_sys_memory_info_failure(self, conv_mem):
@@ -522,11 +522,13 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_once_with(
                 '/redfish/v1/Systems/System1')
-        conv_mem.assert_called_with(self.system_inst.memory_summary.size_gib)
+        conv_mem.assert_called_with(
+                self.system_inst.memory_summary.total_system_memory_gib)
         # Confirm the result is as to be expected
         self.assertEqual(
                 mem_mb,
-                conv_mem(self.system_inst.memory_summary.size_gib).__radd__())
+                conv_mem(
+                  self.system_inst.memory_summary.total_system_memory_gib).__radd__())
 
     def test_conv_GiB_to_MiB(self):
         """Test the conversion of GiB to MiB."""
@@ -623,8 +625,10 @@ class TestRSDDriver(base.BaseTestCase):
                                       conv_mem):
         """Test creating a inventory for a provider tree."""
         # Setup test to successfully create inventory
-        sys_mem_info.return_value = self.system_inst.memory_summary.size_gib
-        sys_proc_info.return_value = self.system_inst.processors.summary.count
+        sys_mem_info.return_value = \
+                self.system_inst.memory_summary.total_system_memory_gib
+        sys_proc_info.return_value = \
+                self.system_inst.json['ProcessorSummary']['Count']
         inv = self.RSD.create_inventory([self.system_inst.identity])
 
         # Check that the correct functions are called and the inventory
@@ -656,7 +660,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         sys_col.get_member.return_value = self.system_inst
         mem = conv_mem.return_value - 512
-        proc = self.system_inst.processors.summary.count
+        proc = self.system_inst.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         child_inv = self.RSD.create_child_inventory(
                 '/redfish/v1/Systems/System1')
@@ -667,7 +671,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col.get_member.assert_called_once_with(
                 '/redfish/v1/Systems/System1')
         conv_mem.assert_called_once_with(
-                self.system_inst.memory_summary.size_gib)
+                self.system_inst.memory_summary.total_system_memory_gib)
         norm_name.assert_called_once_with(flav_id)
         self.assertEqual(child_inv, {norm_name.return_value: {
                                           'total': 1,

@@ -656,7 +656,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         sys_col.get_member.return_value = self.system_inst
         mem = conv_mem.return_value - 512
-        proc = self.system_inst.processors.summary.count
+        proc = self.system_inst.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         child_inv = self.RSD.create_child_inventory(
                 '/redfish/v1/Systems/System1')

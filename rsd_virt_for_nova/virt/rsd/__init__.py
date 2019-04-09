@@ -54,9 +54,15 @@ class PODM_connection(object):
         COMPOSED_NODE_COL = self.PODM.get_node_collection()
 
         for s in SYSTEMS:
+            system = SYS_COL.get_member(s)
+            processors = system.processors.members_identities
+            proc = processors[0]
+            data = {
+                'Resource': {
+                    "@odata.id" : proc}}
             # Allocate the resources for all of the systems availablea
             try:
-                node = COMPOSED_NODE_COL.compose_node()
+                node = COMPOSED_NODE_COL.compose_node(processor_req=[data])
             except Exception as ex:
                 LOG.warn("Node is already allocated: %s", ex)
 

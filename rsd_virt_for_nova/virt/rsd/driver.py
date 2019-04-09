@@ -288,7 +288,8 @@ class RSDDriver(driver.ComputeDriver):
             for s in systems:
                 ss = SYSTEM_COL.get_member(s)
                 if ss.identity in self.driver.composed_nodes.keys():
-                    cpus = cpus + ss.processors.summary.count
+                    proc = ss.json['ProcessorSummary']['Count']
+                    cpus = cpus + proc
         except Exception as ex:
             LOG.info("Failed to get processor info: %s", ex)
         return cpus
@@ -302,7 +303,7 @@ class RSDDriver(driver.ComputeDriver):
             for s in systems:
                 ss = SYSTEM_COL.get_member(s)
                 if ss.identity in self.driver.composed_nodes.keys():
-                    mem = ss.memory_summary.size_gib
+                    mem = ss.memory_summary.total_system_memory_gib
                     ram = \
                         ram + self.conv_GiB_to_MiB(mem)
         except Exception as ex:
@@ -401,8 +402,8 @@ class RSDDriver(driver.ComputeDriver):
         """Create custom resources for all of the child RP's."""
         SYSTEM_COL = self.driver.PODM.get_system_collection()
         sys = SYSTEM_COL.get_member(system)
-        mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
-        proc = sys.processors.summary.count
+        mem = self.conv_GiB_to_MiB(sys.memory_summary.total_system_memory_gib) - 512
+        proc = sys.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         res = fields.ResourceClass.normalize_name(flav_id)
         return {
@@ -418,7 +419,11 @@ class RSDDriver(driver.ComputeDriver):
 
     def check_chassis_systems(self, chassis):
         """Check the chassis for linked systems."""
-        systems = chassis.json['Links']['ComputerSystems']
+        try:
+            systems = chassis.json['Links']['ComputerSystems']
+        except KeyError as ke:
+            LOG.debug("No valid compute systems: %s", ke)
+            systems = []
         cha_sys = []
         for s in systems:
             cha_sys += s.values()
@@ -434,8 +439,8 @@ class RSDDriver(driver.ComputeDriver):
 
             for s in cha_sys:
                 sys = SYSTEM_COL.get_member(s)
-                mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
-                proc = sys.processors.summary.count
+                mem = self.conv_GiB_to_MiB(sys.memory_summary.total_system_memory_gib) - 512
+                proc = sys.json['ProcessorSummary']['Count']
                 flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
                 res = fields.ResourceClass.normalize_name(flav_id)
                 spec = str('resources:' + res)
@@ -498,8 +503,8 @@ class RSDDriver(driver.ComputeDriver):
         for s in systems:
             sys = collection.get_member(s)
             sys_ids.append(sys.identity)
-            mem = self.conv_GiB_to_MiB(sys.memory_summary.size_gib) - 512
-            proc = sys.processors.summary.count
+            mem = self.conv_GiB_to_MiB(sys.memory_summary.total_system_memory_gib) - 512
+            proc = sys.json['ProcessorSummary']['Count']
             flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
             flav_ids.append(flav_id)
 

@@ -14,5 +14,6 @@ flake8
 pycodestyle
 wsgi-intercept>=1.4.1 # MIT License
 sushy>=1.7.0  # Apache-2.0
+rsd-lib<=0.5.1
 
 -e git+https://github.com/openstack/nova.git#egg=nova # Apache-2.0

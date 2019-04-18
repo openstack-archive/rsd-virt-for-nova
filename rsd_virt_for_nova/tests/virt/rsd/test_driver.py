@@ -45,8 +45,7 @@ import rsd_lib
 from rsd_lib.resources.v2_1.chassis import chassis
 from rsd_lib.resources.v2_2.system import system
 
-from rsd_lib.resources.v2_3.node import node
-from rsd_lib.resources.v2_3.node import node as v2_3_node
+from rsd_lib.resources.v2_3 import node as v2_3_node
 
 from sushy import connector
 
@@ -54,14 +53,14 @@ from sushy import connector
 class FakeInstance(object):
     """A class to fake out nova instances."""
 
-    def __init__(self, name, state, uuid, new_flavor, node):
+    def __init__(self, name, state, uuid, new_flavor, new_node):
         """Initialize the variables for fake instances."""
         self.name = name
         self.power_state = state
         self.uuid = uuid
         self.display_description = None
         self.flavor = new_flavor
-        self.node = node
+        self.node = new_node
 
     def __getitem__(self, key):
         """Method to retrieve fake instance variables."""
@@ -133,14 +132,14 @@ class TestRSDDriver(base.BaseTestCase):
                   'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
-        self.node_collection = node.NodeCollection(
+        self.node_collection = v2_3_node.NodeCollection(
             self.root_conn, '/redfish/v1/Nodes', redfish_version='1.0.2')
 
         with open('rsd_virt_for_nova/tests/json_samples/node.json',
                   'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
-        self.node_inst = node.Node(
+        self.node_inst = v2_3_node.Node(
             self.root_conn, '/redfish/v1/Nodes/Node1',
             redfish_version='1.0.2')
 
@@ -148,7 +147,7 @@ class TestRSDDriver(base.BaseTestCase):
                   'r') as f:
             self.root_conn.get.return_value.json.return_value = json.loads(
                                                                      f.read())
-        self.node_ass_inst = node.Node(
+        self.node_ass_inst = v2_3_node.Node(
             self.root_conn, '/redfish/v1/Nodes/Node1',
             redfish_version='1.0.2')
 
@@ -172,9 +171,9 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD = driver.RSDDriver(fake.FakeVirtAPI())
 
         # Create Fake flavors and instances
-        gb = self.system_inst.memory_summary.size_gib
+        gb = self.system_inst.memory_summary.total_system_memory_gib
         mem = self.RSD.conv_GiB_to_MiB(gb)
-        proc = self.system_inst.processors.summary.count
+        proc = self.system_inst.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         res = fields.ResourceClass.normalize_name(self.system_inst.identity)
         spec = 'resources:' + res
@@ -242,10 +241,11 @@ class TestRSDDriver(base.BaseTestCase):
     def test_get_info_valid(self, info):
         """Test getting information for a valid instance."""
         # Run test
-        self.RSD.get_info(self.inst1)
+        hw_info = self.RSD.get_info(self.inst1)
 
         # Confirm that the correct hardware info os collected
         info.assert_called_once_with(state=self.inst1.power_state)
+        self.assertEquals(hw_info, info.return_value)
 
     @mock.patch.object(hardware, 'InstanceInfo')
     def test_get_info_invalid(self, info):
@@ -256,22 +256,26 @@ class TestRSDDriver(base.BaseTestCase):
 
         info.assert_not_called()
 
-    def test_get_available_nodes_false_refresh(self):
+    @mock.patch.object(driver.RSDDriver, '_init_nodes')
+    def test_get_available_nodes_false_refresh(self, init_nodes):
         """Test getting a list of the available nodes, no refresh."""
         # Run test checking the list of available nodes
         nodes = self.RSD.get_available_nodes(refresh=False)
 
         # Confirm that the correst functions are called and all of the correct
         # nodes are available
+        init_nodes.assert_called_once()
         self.assertEqual(nodes, self.RSD._nodes)
 
-    def test_get_available_nodes_true_refresh(self):
+    @mock.patch.object(driver.RSDDriver, '_init_nodes')
+    def test_get_available_nodes_true_refresh(self, init_nodes):
         """Test getting a list of the available nodes, with refresh."""
         # Run test checking the list of available nodes, refresh
         nodes = self.RSD.get_available_nodes(refresh=True)
 
         # Confirm that the correst functions are called and all of the correct
         # nodes are available
+        init_nodes.assert_called_once()
         self.assertEqual(nodes, self.RSD._nodes)
 
     @mock.patch.object(driver.RSDDriver, 'get_available_nodes')
@@ -282,7 +286,7 @@ class TestRSDDriver(base.BaseTestCase):
 
         # Confirm the correct functions are called and confirm that the
         # node being checked is not available
-        getNodes.assert_called()
+        getNodes.assert_called_with(refresh=True)
         self.assertEqual(self.RSD.instance_node, None)
         self.assertEqual(avail, False)
 
@@ -316,13 +320,13 @@ class TestRSDDriver(base.BaseTestCase):
         node_col = self.RSD.driver.PODM.get_node_collection.return_value
         node_col.members_identities = ['/redfish/v1/Nodes/Node1']
         self.RSD.driver.PODM.get_node.return_value = self.node_ass_inst
+        node = self.RSD.driver.PODM.get_node.return_value
         mock_context = context.get_admin_context()
         self.RSD.rsd_flavors = {
                 self.flavor.flavorid: {
-                    'id': 'flav_id',
                     'rsd_systems': {
                         '/redfish/v1/Chassis/Chassis1':
-                                self.system_inst.identity
+                                self.system_inst.path
                         }
                     }
                 }
@@ -336,7 +340,23 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.driver.PODM.get_node_collection.assert_called_once()
         self.RSD.driver.PODM.get_node.assert_called_with(
                 '/redfish/v1/Nodes/Node1')
+        self.assertEquals(node.composed_node_state.lower(), 'assembled')
+        self.assertEquals(node.power_state.lower(), 'off')
+        self.assertEquals(self.inst1.display_description,
+                json.dumps({"node_identity": "/redfish/v1/Nodes/Node1",
+                 "node_uuid": node.uuid}))
         power_on.assert_called_once_with(mock_context, self.inst1, None)
+
+    @mock.patch.object(driver.RSDDriver, 'power_on')
+    def test_spawn_failure(self, power_on):
+        """Test spawning an instance failure."""
+        mock_context = context.get_admin_context()
+        image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        # Run spawning test
+        self.assertRaises(
+                Exception, self.RSD.spawn, mock_context, self.inst1,
+                image_meta, [], None, {})
+        power_on.assert_not_called()
 
     @mock.patch.object(v2_3_node, 'Node', autospec=True)
     def test_destroy_success(self, mock_node):
@@ -351,6 +371,7 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.destroy("context", self.inst1, network_info=None)
 
         # Confirm that the instance has been delete from the list of instances
+        self.assertIn(self.inst1.uuid, self.RSD._composed_nodes)
         mock_node.delete_node.assert_called_once()
         node_collection.assert_called_once()
         node_collection.return_value.compose_node.assert_called_once()
@@ -370,6 +391,7 @@ class TestRSDDriver(base.BaseTestCase):
 
         # Confirm that the instance failed to delete and a new node was not
         # created to replace it
+        self.assertNotIn(self.inst1.uuid, self.RSD._composed_nodes)
         mock_node.delete_node.assert_not_called()
         self.RSD.driver.PODM.get_node_collection.assert_not_called()
         node_collection.return_value.compose_node.assert_not_called()
@@ -391,6 +413,8 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD._nodes = [chas_str]
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         chas_col = self.RSD.driver.PODM.get_chassis_collection.return_value
+
+        # Run test
         resources = self.RSD.get_available_resource(chas_str)
 
         # Perform checks on all methods called on a successful run
@@ -417,6 +441,34 @@ class TestRSDDriver(base.BaseTestCase):
                           [('x86_64', 'baremetal', 'hvm')],
                           'vcpus': proc_info.return_value,
                           'vcpus_used': 0}, resources)
+
+    @mock.patch.object(driver.RSDDriver, '_create_flavors')
+    @mock.patch.object(driver.RSDDriver, 'check_flavors')
+    @mock.patch.object(driver.RSDDriver, 'check_chassis_systems')
+    @mock.patch.object(versionutils, 'convert_version_to_int')
+    @mock.patch.object(driver.RSDDriver, 'get_sys_proc_info')
+    @mock.patch.object(driver.RSDDriver, 'get_sys_memory_info')
+    def test_get_available_resource_failure(self, mem_info, proc_info, conv_v,
+                                            check_chas, check_flav,
+                                            create_flav):
+        """Test failure to get available resources for a node."""
+        # Mock out required variables
+        chas_col = self.RSD.driver.PODM.get_chassis_collection.return_value
+
+        # Run test
+        resources = self.RSD.get_available_resource('/invalid/mock/node')
+
+        # Confirm none of the functionality is called
+        self.RSD.driver.PODM.get_chassis_collection.assert_not_called()
+        self.RSD.driver.PODM.get_system_collection.assert_not_called()
+        chas_col.get_member.assert_not_called()
+        check_chas.assert_not_called()
+        check_flav.assert_not_called()
+        create_flav.assert_not_called()
+        mem_info.assert_not_called()
+        proc_info.assert_not_called()
+        conv_v.assert_not_called()
+        self.assertEqual({}, resources)
 
     @mock.patch.object(driver.RSDDriver, 'create_child_inventory')
     @mock.patch.object(driver.RSDDriver, 'create_inventory')
@@ -485,13 +537,17 @@ class TestRSDDriver(base.BaseTestCase):
         """Test succeeding in getting sys_proc info."""
         # Set up for a successful test for getting system processor information
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
+        sys_col.get_member.return_value = self.system_inst
+        self.RSD.driver.composed_nodes = {
+            self.node_inst.links.computer_system: self.node_inst.identity}
         cpus = self.RSD.get_sys_proc_info(['/redfish/v1/Systems/System1'])
 
         # Confirm that the relavant functions fail when called
         # And correct proccessor information is calculated
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_with('/redfish/v1/Systems/System1')
-        self.assertEqual(cpus, self.system_inst.processors.summary.count)
+        self.assertEqual(cpus,
+                self.system_inst.json['ProcessorSummary']['Count'])
 
     @mock.patch.object(driver.RSDDriver, 'conv_GiB_to_MiB')
     def test_get_sys_memory_info_failure(self, conv_mem):
@@ -514,19 +570,20 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col.members_identities = ['/redfish/v1/Systems/System1']
         sys_col.get_member.return_value = self.system_inst
         self.RSD.driver.composed_nodes = {
-            self.node_inst.system.identity: self.node_inst.identity}
+            self.node_inst.links.computer_system: self.node_inst.identity}
         # Run the test and get the result
         mem_mb = self.RSD.get_sys_memory_info(['/redfish/v1/Systems/System1'])
 
+        total_sys_mem = self.system_inst.memory_summary.total_system_memory_gib
         # Confirm that the relavant functions fail when called
         self.RSD.driver.PODM.get_system_collection.assert_called_once()
         sys_col.get_member.assert_called_once_with(
                 '/redfish/v1/Systems/System1')
-        conv_mem.assert_called_with(self.system_inst.memory_summary.size_gib)
+        conv_mem.assert_called_with(total_sys_mem)
         # Confirm the result is as to be expected
         self.assertEqual(
                 mem_mb,
-                conv_mem(self.system_inst.memory_summary.size_gib).__radd__())
+                conv_mem(total_sys_mem).__radd__())
 
     def test_conv_GiB_to_MiB(self):
         """Test the conversion of GiB to MiB."""
@@ -558,7 +615,7 @@ class TestRSDDriver(base.BaseTestCase):
 
         # Confirm that the composed node instance is in the shutdown state
         self.assertEqual(self.inst1.power_state, power_state.SHUTDOWN)
-        mock_node.reset_node.assert_called_once_with('graceful shutdown')
+        mock_node.reset_node.assert_called_once_with('GracefulShutdown')
 
     @mock.patch.object(v2_3_node, 'Node', autospec=True)
     def test_invalid_power_on(self, mock_node):
@@ -580,7 +637,7 @@ class TestRSDDriver(base.BaseTestCase):
 
         # Confirm that the composed node instance is in the running state
         self.assertEqual(self.inst1.power_state, power_state.RUNNING)
-        mock_node.reset_node.assert_called_once_with('force on')
+        mock_node.reset_node.assert_called_once_with('On')
 
     @mock.patch.object(v2_3_node, 'Node', autospec=True)
     def test_invalid_reboot(self, mock_node):
@@ -602,7 +659,7 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.reboot(mock.MagicMock(), self.inst1, 'network_info', 'HARD')
 
         # Confirm the correct reset action is called
-        mock_node.reset_node.assert_called_with('force restart')
+        mock_node.reset_node.assert_called_with('ForceRestart')
 
     @mock.patch.object(v2_3_node, 'Node', autospec=True)
     def test_valid_soft_reboot(self, mock_node):
@@ -614,17 +671,19 @@ class TestRSDDriver(base.BaseTestCase):
         self.RSD.reboot(mock.MagicMock(), self.inst1, 'network_info', 'SOFT')
 
         # Confirm the correct reset action is called
-        mock_node.reset_node.assert_called_with('graceful restart')
+        mock_node.reset_node.assert_called_with('GracefulRestart')
 
     @mock.patch.object(driver.RSDDriver, 'conv_GiB_to_MiB')
     @mock.patch.object(driver.RSDDriver, 'get_sys_memory_info')
     @mock.patch.object(driver.RSDDriver, 'get_sys_proc_info')
-    def test_create_inventory_success(self, sys_proc_info, sys_mem_info,
-                                      conv_mem):
+    def test_create_inventory(self, sys_proc_info, sys_mem_info,
+                              conv_mem):
         """Test creating a inventory for a provider tree."""
         # Setup test to successfully create inventory
-        sys_mem_info.return_value = self.system_inst.memory_summary.size_gib
-        sys_proc_info.return_value = self.system_inst.processors.summary.count
+        sys_mem_info.return_value = \
+                self.system_inst.memory_summary.total_system_memory_gib
+        sys_proc_info.return_value = \
+                self.system_inst.json['ProcessorSummary']['Count']
         inv = self.RSD.create_inventory([self.system_inst.identity])
 
         # Check that the correct functions are called and the inventory
@@ -641,8 +700,8 @@ class TestRSDDriver(base.BaseTestCase):
                                   },
                                'VCPU': {
                                   'reserved': 0,
-                                  'total': 1,
-                                  'max_unit': 1,
+                                  'total': sys_proc_info.return_value,
+                                  'max_unit': sys_proc_info.return_value,
                                   'min_unit': 1,
                                   'step_size': 1,
                                   'allocation_ratio': 1}
@@ -656,7 +715,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col = self.RSD.driver.PODM.get_system_collection.return_value
         sys_col.get_member.return_value = self.system_inst
         mem = conv_mem.return_value - 512
-        proc = self.system_inst.processors.summary.count
+        proc = self.system_inst.json['ProcessorSummary']['Count']
         flav_id = str(mem) + 'MB-' + str(proc) + 'vcpus'
         child_inv = self.RSD.create_child_inventory(
                 '/redfish/v1/Systems/System1')
@@ -667,7 +726,7 @@ class TestRSDDriver(base.BaseTestCase):
         sys_col.get_member.assert_called_once_with(
                 '/redfish/v1/Systems/System1')
         conv_mem.assert_called_once_with(
-                self.system_inst.memory_summary.size_gib)
+                self.system_inst.memory_summary.total_system_memory_gib)
         norm_name.assert_called_once_with(flav_id)
         self.assertEqual(child_inv, {norm_name.return_value: {
                                           'total': 1,

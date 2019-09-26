@@ -1,5 +1,0 @@
-[gerrit]
-host=review.gerrithub.io
-port=29418
-project=intel-orchestration-software/rsd-virt-for-nova
-defaultbranch=master
